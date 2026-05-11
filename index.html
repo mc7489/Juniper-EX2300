@@ -1884,14 +1884,16 @@ registerRoute('dashboard/summary', () => {
   const vlanCount = state.vlans.length;
   const accessPorts = state.interfaces.filter(i => i.name.startsWith('ge-'));
   const uplinkPorts = state.interfaces.filter(i => i.name.startsWith('xe-'));
-  function portCell(p, isUplink) {
+  function portCell(p, isUplink, idx) {
     let cls = isUplink ? 'port port-uplink' : 'port';
     if (!p.enabled) cls += ' disabled';
     else if (p.linkUp) cls += ' up';
     if (p.poeEnabled && p.poeUsed > 0) cls += ' poe';
-    const num = p.name.split('/').pop();
-    const tip = `${p.name} · ${p.linkUp ? 'up' : (p.enabled ? 'no link' : 'disabled')}${p.description ? ' · ' + p.description : ''}`;
-    return `<div class="${cls}" title="${escape(tip)}"><span class="led"></span><span class="num">${num}</span></div>`;
+    // 0-based label matching Juniper's actual front-panel silkscreen and Junos interface names
+    // Access ports: ge-0/0/0..47 labelled 0..47;  SFP+ uplinks: xe-0/2/0..3 labelled 0..3
+    const num = isUplink ? (idx - 48) : idx;
+    const tip = `${p.name} · ${p.linkUp ? 'up' : (p.enabled ? 'no link' : 'disabled')}${p.description ? ' · ' + p.description : ''} · click for details`;
+    return `<div class="${cls}" data-port="${escape(p.name)}" title="${escape(tip)}"><span class="led"></span><span class="num">${num}</span></div>`;
   }
 
   c.innerHTML = `
@@ -1902,7 +1904,7 @@ registerRoute('dashboard/summary', () => {
         <button class="btn primary" onclick="location.hash='#configure/system'">Edit Identity</button>
       </div>
     </h2>
-    <div class="page-sub">Chassis viewer and system information for <strong>${escape(state.system.hostname)}</strong></div>
+    <div class="page-sub">Chassis viewer and system information for <strong>${escape(state.system.hostname)}</strong> — click any port for details</div>
 
     <!-- Chassis viewer (signature J-Web element) -->
     <div class="chassis-viewer">
@@ -1911,13 +1913,13 @@ registerRoute('dashboard/summary', () => {
         <span class="lcd">${escape(state.system.hostname)} :: ${portsUp}/${portsTotal} UP</span>
       </div>
       <div class="chassis-front">
-        <div class="port-group-label">48 × 10/100/1000BASE-T (PoE+/PoE++)</div>
+        <div class="port-group-label">48 × 10/100/1000BASE-T (PoE+/PoE++) &nbsp;·&nbsp; ports 0–47 &nbsp;·&nbsp; Junos: ge-0/0/0 → ge-0/0/47</div>
         <div class="port-grid">
-          ${accessPorts.map(p => portCell(p, false)).join('')}
+          ${accessPorts.map((p, i) => portCell(p, false, i)).join('')}
         </div>
-        <div class="port-group-label">4 × 1G/10G SFP+ Uplinks</div>
+        <div class="port-group-label">4 × 1G/10G SFP+ Uplinks &nbsp;·&nbsp; ports 0–3 &nbsp;·&nbsp; Junos: xe-0/2/0 → xe-0/2/3</div>
         <div class="uplink-row">
-          ${uplinkPorts.map(p => portCell(p, true)).join('')}
+          ${uplinkPorts.map((p, i) => portCell(p, true, accessPorts.length + i)).join('')}
         </div>
         <div class="chassis-legend">
           <div class="item"><span class="dot up"></span> link up</div>
@@ -1987,6 +1989,11 @@ registerRoute('dashboard/summary', () => {
       </div>
     </div>
   `;
+  // Wire up click handlers on every port in the chassis viewer
+  c.querySelectorAll('.port').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.onclick = () => showPortDetail(el.dataset.port);
+  });
   return c;
 }, ['Dashboard'], 'dashboard');
 
@@ -1999,8 +2006,10 @@ registerRoute('dashboard/ports', () => {
     if (!p.enabled) cls += ' disabled';
     else if (p.linkUp) cls += ' up';
     if (p.poeEnabled && p.poeUsed > 0) cls += ' poe';
+    // 0-based label — matches the physical EX2300 silkscreen and the Junos interface name
     const num = p.name.split('/').pop();
-    return `<div class="${cls}" data-port="${escape(p.name)}" title="${escape(p.name)} · ${p.linkUp ? 'up' : (p.enabled ? 'no link' : 'disabled')}${p.description ? ' · ' + p.description : ''}">${num}${p.poeEnabled && p.poeUsed > 0 ? '<span class="poe-mark">P</span>' : ''}</div>`;
+    const tip = `${p.name} · ${p.linkUp ? 'up' : (p.enabled ? 'no link' : 'disabled')}${p.description ? ' · ' + p.description : ''} · click for details`;
+    return `<div class="${cls}" data-port="${escape(p.name)}" title="${escape(tip)}">${num}${p.poeEnabled && p.poeUsed > 0 ? '<span class="poe-mark">P</span>' : ''}</div>`;
   }
   c.innerHTML = `
     <h2 class="page-title">Front Panel Ports
@@ -2009,7 +2018,7 @@ registerRoute('dashboard/ports', () => {
         <button class="btn" onclick="location.hash='#configure/interfaces'">Configure Interfaces</button>
       </div>
     </h2>
-    <div class="page-sub">48 × 1G copper (PoE+/PoE++ on MP) · 4 × 10G SFP+ uplinks · click a port to view details</div>
+    <div class="page-sub">48 × 1G copper (PoE+/PoE++ on MP) · 4 × 10G SFP+ uplinks · click any port for details. Port numbers match Junos interface names: <span class="mono">ge-0/0/0</span> through <span class="mono">ge-0/0/47</span>.</div>
 
     <div class="port-panel">
       <div class="port-panel-title">
